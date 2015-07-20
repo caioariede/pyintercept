@@ -4,7 +4,7 @@ Intercept function calls from Python scripts
 # Example
 
 ```bash
-pyintercept setup.py --function=setuptools.core --handler=json.dumps
+pyintercept setup.py --args="install" --function=setuptools.core --handler=pyintercept.json
 ```
 
 ```javascript
