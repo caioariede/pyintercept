@@ -36,15 +36,18 @@ def run(args):
     function = args.function[0]
     script = args.script[0]
     handler = args.handler[0]
-    script_args = args.args
+    script_args = args.args.split()
 
     if handler:
         handler = get_class(handler)
     else:
         handler = None
 
+    script_args.insert(0, script)
+
     p = Patcher()
-    p.patch_run(script, args=script_args, function=function, handler=handler)
+    p.load_file(script)
+    p.patch_run(function=function, handler=handler)
 
 
 run(get_args())
