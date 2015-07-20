@@ -27,7 +27,7 @@ def get_args():
     parser.add_argument(
         '--handler', metavar='handler', type=str, nargs=1,
         help='function to be called instead of original function',
-        default='pyintercept.json')
+        default=['pyintercept.json'])
 
     return parser.parse_args()
 
@@ -35,7 +35,7 @@ def get_args():
 def run(args):
     function = args.function[0]
     script = args.script[0]
-    handler = args.handler
+    handler = args.handler[0]
     script_args = args.args
 
     if handler:
