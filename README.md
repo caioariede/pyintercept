@@ -8,5 +8,5 @@ python -m pyintercept setup.py setuptools.setup --args=install --handler=pyinter
 ```
 
 ```javascript
-{'package_data': {'location_field': ['static/location_field/js/*', 'templates/locati...
+{"package_data": {"location_field": ["static/location_field/js/*", "templates/location_fie
 ```
