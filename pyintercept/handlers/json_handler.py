@@ -1,3 +1,3 @@
 def json(*args, **kwargs):
     from json import dumps
-    print dumps(kwargs)
+    print dumps({'args': args, 'kwargs': kwargs})

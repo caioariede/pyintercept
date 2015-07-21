@@ -47,7 +47,7 @@ def run(args):
 
     p = Patcher()
     p.load_file(script)
-    p.patch_run(function=function, handler=handler)
+    p.patch_run(function=function, handler=handler, args=script_args)
 
 
 run(get_args())
