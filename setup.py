@@ -4,11 +4,7 @@ from setuptools import setup, find_packages
 from setuptools.command.test import test as TestCommand
 
 
-VERSION = '0.3'
-
-def foo(x):
-    print x
-foo(1)
+VERSION = '0.4'
 
 
 class PyTest(TestCommand):
