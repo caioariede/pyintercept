@@ -28,7 +28,7 @@ setup(package='bar')
 
 
 def test_patch_local_function(capsys):
-    def double(i):
+    def double(origfn, i):
         print(i * 3)
     p = Patcher()
     p.loads("""

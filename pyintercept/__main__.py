@@ -47,6 +47,7 @@ def run(args):
 
     p = Patcher()
     p.load_file(script)
+    p.patch_save('test.pyc', function=function)
     p.patch_run(function=function, handler=handler, args=script_args)
 
 

@@ -220,22 +220,33 @@ class Patcher(object):
             from a.b.c import d
             def hnd010101(*args, **kwargs):
                 <handler code>
-            d.myfunction = hnd010101
+            d.myfunction = partial(hnd010101, d.myfunction)
 
         For a function path like 'a.b' we construct the following:
 
             import a
             def hnd010101(*args, **kwargs):
                 <handler code>
-            a.b = hnd010101
+            a.b = partial(hnd010101, a.b)
 
         And for a local function like 'a' we construct the following:
 
             def hnd010101(*args, **kwargs):
                 <handler code>
-            a = hnd010101
+            a = partial(hnd010101, a)
 
         """
+        hndname = handler.co_name
+
+        # from functools import partial as hnd010101partial
+        yield (byteplay.SetLineno, 0)
+        yield (byteplay.LOAD_CONST, -1)
+        yield (byteplay.LOAD_CONST, ('partial',))
+        yield (byteplay.IMPORT_NAME, 'functools')
+        yield (byteplay.IMPORT_FROM, 'partial')
+        yield (byteplay.STORE_NAME, hndname + 'partial')
+        yield (byteplay.POP_TOP, None)
+
         if '.' in function_path:
             mod, _dot, fnname = function_path.rpartition('.')
 
@@ -245,39 +256,53 @@ class Patcher(object):
             if mod.count('.') > 1:
                 importname, _dot, importfrom = mod.rpartition('.')
 
+                # from django.core import management as hnd010101management
                 yield (byteplay.LOAD_CONST, (importfrom,))
                 yield (byteplay.IMPORT_NAME, importname)
                 yield (byteplay.IMPORT_FROM, importfrom)
-                yield (byteplay.STORE_NAME, importfrom)
+                yield (byteplay.STORE_NAME, hndname + importfrom)
+                yield (byteplay.POP_TOP, None)
 
             else:
-                importname = mod
                 importfrom = fnname
 
+                # import setuptools as hnd010101setuptools
                 yield (byteplay.LOAD_CONST, None)
-                yield (byteplay.IMPORT_NAME, importname)
-                yield (byteplay.STORE_NAME, importfrom)
+                yield (byteplay.IMPORT_NAME, mod)
+                yield (byteplay.STORE_NAME, hndname + fnname)
 
-                yield (byteplay.SetLineno, 0)
-                yield (byteplay.LOAD_CONST, handler)
-                yield (byteplay.MAKE_FUNCTION, 0)
-                yield (byteplay.STORE_NAME, handler.co_name)
-
-                yield (byteplay.SetLineno, 0)
-                yield (byteplay.LOAD_NAME, handler.co_name)
-                yield (byteplay.LOAD_NAME, importfrom)
-                yield (byteplay.STORE_ATTR, fnname)
-
-                yield (byteplay.SetLineno, 0)
-
-        else:
+            # def hnd010101(origfn, *args, **kwargs):
+            #     pass
             yield (byteplay.SetLineno, 0)
             yield (byteplay.LOAD_CONST, handler)
             yield (byteplay.MAKE_FUNCTION, 0)
-            yield (byteplay.STORE_FAST, handler.co_name)
+            yield (byteplay.STORE_NAME, hndname)
 
+            # hnd010101setuptools.setup = hnd010101partial(
+            #     hnd010101, hnd010101setuptools.setup)
             yield (byteplay.SetLineno, 0)
-            yield (byteplay.LOAD_FAST, handler.co_name)
+            yield (byteplay.LOAD_GLOBAL, hndname + 'partial')
+            yield (byteplay.LOAD_GLOBAL, hndname)
+            yield (byteplay.LOAD_GLOBAL, hndname + importfrom)
+            yield (byteplay.LOAD_ATTR, fnname)
+            yield (byteplay.CALL_FUNCTION, 2)
+            yield (byteplay.LOAD_GLOBAL, hndname + importfrom)
+            yield (byteplay.STORE_ATTR, fnname)
+
+        else:
+            # def hnd010101(origfn, *args, **kwargs):
+            #     pass
+            yield (byteplay.SetLineno, 0)
+            yield (byteplay.LOAD_CONST, handler)
+            yield (byteplay.MAKE_FUNCTION, 0)
+            yield (byteplay.STORE_NAME, hndname)
+
+            # local_function = hnd010101partial(hnd010101, local_function)
+            yield (byteplay.SetLineno, 0)
+            yield (byteplay.LOAD_GLOBAL, hndname + 'partial')
+            yield (byteplay.LOAD_GLOBAL, hndname)
+            yield (byteplay.LOAD_GLOBAL, function_path)
+            yield (byteplay.CALL_FUNCTION, 2)
             yield (byteplay.STORE_NAME, function_path)
 
-            yield (byteplay.SetLineno, 0)
+        yield (byteplay.SetLineno, 0)

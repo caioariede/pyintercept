@@ -1,3 +1,3 @@
-def print_(*args, **kwargs):
+def print_(origfn, *args, **kwargs):
     print args
     print kwargs
