@@ -9,9 +9,9 @@ def test_patch_file(capsys):
 from setuptools import setup
 setup(package='foobar')
     """)
-    p.patch_run(function='setuptools.setup', handler=pyintercept.json)
+    p.patch_run(function='setuptools.setup', handler=pyintercept.print_)
     out, _err = capsys.readouterr()
-    assert out == '{"package": "foobar"}\n'
+    assert out == "()\n{'package': 'foobar'}\n"
 
 
 def test_patch_file2(capsys):
@@ -21,9 +21,9 @@ from setuptools import setup
 setup(package='foo')
 setup(package='bar')
     """)
-    p.patch_run(function='setuptools.setup', handler=pyintercept.json)
+    p.patch_run(function='setuptools.setup', handler=pyintercept.print_)
     out, _err = capsys.readouterr()
-    assert out == '{"package": "foo"}\n{"package": "bar"}\n'
+    assert out == "()\n{'package': 'foo'}\n()\n{'package': 'bar'}\n"
 
 
 def test_patch_local_function(capsys):
