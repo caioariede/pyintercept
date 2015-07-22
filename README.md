@@ -1,6 +1,8 @@
 # pyintercept
 Intercept function calls from Python scripts
 
+[![Build Status](https://travis-ci.org/caioariede/pyintercept.svg)](https://travis-ci.org/caioariede/pyintercept)
+
 ## Installation
 
 `pip install pyintercept`
