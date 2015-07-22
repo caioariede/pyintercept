@@ -1,4 +1,5 @@
 import pyintercept
+import pytest
 
 from pyintercept.lib import Patcher
 
@@ -39,3 +40,17 @@ double(2)
     p.patch_run(function='double', handler=double)
     out, _err = capsys.readouterr()
     assert out == '3\n6\n'
+
+
+def test_not_loaded():
+    p = Patcher()
+    with pytest.raises(AssertionError):
+        p.patch_run(function='x')
+
+
+def test_not_patched():
+    p = Patcher()
+    with pytest.raises(AssertionError):
+        p.run()
+    with pytest.raises(AssertionError):
+        p.save('x.pyc')

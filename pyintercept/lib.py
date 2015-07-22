@@ -10,16 +10,55 @@ from . import json
 
 class Patcher(object):
     code_object = None
+    new_code_object = None
 
     def patch_run(self, function, args=None, handler=None):
+        """ Single call to patch() and run()
+        """
         self.patch(function, handler=handler)
         self.run(args=args)
 
     def patch_save(self, outfile, function, handler=None):
+        """ Single call to patch() and save()
+        """
         self.patch(function, handler=handler)
         self.save(outfile)
 
+    def loads(self, fd):
+        """ Load a file or string to be patched
+
+        Arguments:
+        fd -- can be either a file descriptor or a string
+        """
+        if type(fd) == file:
+            fd.read(4)  # python version magic num
+            fd.read(4)  # compilation date
+
+            self.code_object = marshal.load(fd)
+        else:
+            # Compile code string on the fly
+            self.code_object = compile(fd, '<string>', 'exec')
+
+    def load_file(self, filepath):
+        """ Same as loads but accepts a file path as argument
+        """
+        self.compile_file(filepath)
+
+        with open(filepath + 'c', 'rb') as fd:
+            self.loads(fd)
+
     def patch(self, function, handler=None):
+        """ Inject the payload in the loaded code
+
+        Arguments:
+            function -- str containing the function path to be replaced
+
+        Keyword arguments:
+            handler -- function that will be injected
+                       (default: pyintercept.json)
+        """
+        assert self.code_object, 'Not loaded'
+
         if handler is None:
             handler = json
 
@@ -29,7 +68,14 @@ class Patcher(object):
 
         self.new_code_object = new_code.to_code()
 
-    def run(self, args):
+    def run(self, args=None):
+        """ Run patched code containing the payload
+
+        Keyword arguments:
+        args -- list of arguments to be passed to sys.argv
+        """
+        assert self.new_code_object, 'Not patched'
+
         if args is None:
             args = []
 
@@ -38,6 +84,10 @@ class Patcher(object):
         exec(self.new_code_object, {'__name__': '__main__'})
 
     def save(self, outfile):
+        """ Save compiled patched file in outfile (.pyc)
+        """
+        assert self.new_code_object, 'Not patched'
+
         with open(outfile, 'wb') as fd:
             fd.write(py_compile.MAGIC)
             py_compile.wr_long(fd, long(time.time()))
@@ -46,101 +96,31 @@ class Patcher(object):
             fd.seek(0, 0)
             fd.write(py_compile.MAGIC)
 
-    def loads(self, fd):
-        if type(fd) == file:
-            fd.read(4)  # python version magic num
-            fd.read(4)  # compilation date
-
-            self.code_object = marshal.load(fd)
-        else:
-            self.code_object = compile(fd, '<string>', 'exec')
-
-    def load_file(self, filepath):
-        self.compile_file(filepath)
-        with open(filepath + 'c', 'rb') as fd:
-            self.loads(fd)
-
     def inject_patch(self, idx, code, fnpath, handler):
+        """ Inject payload in the compiled code
+
+        Arguments:
+        idx -- position in the bytecode the payload will be injected
+        code -- code to be patched
+        fnpath -- function path to be replaced (old function)
+        handler -- new function
+        """
         handlername = 'hnd' + uuid.uuid4().hex
 
-        handler_code = type(handler.__code__)(
-            handler.__code__.co_argcount,
-            handler.__code__.co_nlocals,
-            handler.__code__.co_stacksize,
-            handler.__code__.co_flags,
-            handler.__code__.co_code,
-            handler.__code__.co_consts,
-            handler.__code__.co_names,
-            handler.__code__.co_varnames,
-            handler.__code__.co_filename,
-            handlername,
-            handler.__code__.co_firstlineno,
-            handler.__code__.co_lnotab,
-            handler.__code__.co_freevars,
-            handler.__code__.co_cellvars,
-        )
+        # Clone handler, associating a new-random name to it
+        # This way we prevent conflicts with existing functions
+        cloned_handler = self.clone_handler(handler, handlername)
 
-        if '.' in fnpath:
-            mod, _dot, fnname = fnpath.rpartition('.')
+        # Create the payload, injecting the cloned version of the handler
+        payload = self.build_payload(fnpath, cloned_handler)
 
-            payload = [
-                (byteplay.SetLineno, 0),
-                (byteplay.LOAD_CONST, -1),
-            ]
-
-            if mod.count('.') > 1:
-                importname, _dot, importfrom = mod.rpartition('.')
-
-                payload += [
-                    (byteplay.LOAD_CONST, (importfrom,)),
-                    (byteplay.IMPORT_NAME, importname),
-                    (byteplay.IMPORT_FROM, importfrom),
-                    (byteplay.STORE_NAME, importfrom),
-                ]
-
-            else:
-                importname = mod
-                importfrom = fnname
-
-                payload += [
-                    (byteplay.LOAD_CONST, None),
-                    (byteplay.IMPORT_NAME, importname),
-                    (byteplay.STORE_NAME, importfrom),
-                ]
-
-            payload += [
-
-                (byteplay.SetLineno, 0),
-                (byteplay.LOAD_CONST, handler_code),
-                (byteplay.MAKE_FUNCTION, 0),
-                (byteplay.STORE_NAME, handlername),
-
-                (byteplay.SetLineno, 0),
-                (byteplay.LOAD_NAME, handlername),
-                (byteplay.LOAD_NAME, importfrom),
-                (byteplay.STORE_ATTR, fnname),
-
-                (byteplay.SetLineno, 0),
-            ]
-
-        else:
-            payload = [
-                (byteplay.SetLineno, 0),
-                (byteplay.LOAD_CONST, handler.__code__),
-                (byteplay.MAKE_FUNCTION, 0),
-                (byteplay.STORE_FAST, handlername),
-
-                (byteplay.SetLineno, 0),
-                (byteplay.LOAD_FAST, handlername),
-                (byteplay.STORE_NAME, fnpath),
-
-                (byteplay.SetLineno, 0),
-            ]
-
+        # Inject payload into code
         code.code[idx:idx] = payload
 
+        # Recalculate line numbers
         line = 1
         code.firstlineno = line
+
         for i, (op, val) in enumerate(code.code):
             if op == byteplay.SetLineno:
                 code.code[i] = (op, line)
@@ -149,12 +129,30 @@ class Patcher(object):
         return code
 
     def get_code(self, code_object):
+        """ Return byteplay.Code instance that will be used to manipulated
+        the bytecode
+
+        Arguments:
+        code_object -- the code object to be converted
+        """
         return byteplay.Code.from_code(code_object)
 
     def compile_file(self, filepath):
+        """ Compile filepath, generating a .pyc file that will be read later
+        """
         py_compile.compile(filepath)
 
     def get_start_index(self, function, code):
+        """ Returns the position to inject the payload. It depends on the
+        kind of function and the code where the payload will be injected.
+
+        In case the code contains a __future__ import, we cannot inject
+        the payload before it since __future__ imports must always be
+        at the beginning of the file.
+
+        In case it's a local function (there are no '.' in the function path)
+        we inject the payload right after the first function definition.
+        """
         ops = list(code.code)
         cnt = len(ops)
 
@@ -177,7 +175,7 @@ class Patcher(object):
                         return idx + 1
                 idx += 1
         else:
-            # Local function
+            # This is a local function
             while idx < cnt:
                 op, val = ops[idx]
                 if op == byteplay.MAKE_FUNCTION:
@@ -189,3 +187,97 @@ class Patcher(object):
                 idx += 1
 
         return 1
+
+    def clone_handler(self, handler, handlername):
+        """ Clone handler, associating a new name
+
+        Arguments:
+        handler -- function code to be cloned
+        handlername -- new name to associate
+        """
+        return type(handler.__code__)(
+            handler.__code__.co_argcount,
+            handler.__code__.co_nlocals,
+            handler.__code__.co_stacksize,
+            handler.__code__.co_flags,
+            handler.__code__.co_code,
+            handler.__code__.co_consts,
+            handler.__code__.co_names,
+            handler.__code__.co_varnames,
+            handler.__code__.co_filename,
+            handlername,
+            handler.__code__.co_firstlineno,
+            handler.__code__.co_lnotab,
+            handler.__code__.co_freevars,
+            handler.__code__.co_cellvars,
+        )
+
+    def build_payload(self, function_path, handler):
+        """ Constructs the payload. Its structure depends in function path.
+
+        For a function path like 'a.b.c.d' we construct the following payload:
+
+            from a.b.c import d
+            def hnd010101(*args, **kwargs):
+                <handler code>
+            d.myfunction = hnd010101
+
+        For a function path like 'a.b' we construct the following:
+
+            import a
+            def hnd010101(*args, **kwargs):
+                <handler code>
+            a.b = hnd010101
+
+        And for a local function like 'a' we construct the following:
+
+            def hnd010101(*args, **kwargs):
+                <handler code>
+            a = hnd010101
+
+        """
+        if '.' in function_path:
+            mod, _dot, fnname = function_path.rpartition('.')
+
+            yield (byteplay.SetLineno, 0)
+            yield (byteplay.LOAD_CONST, -1)
+
+            if mod.count('.') > 1:
+                importname, _dot, importfrom = mod.rpartition('.')
+
+                yield (byteplay.LOAD_CONST, (importfrom,))
+                yield (byteplay.IMPORT_NAME, importname)
+                yield (byteplay.IMPORT_FROM, importfrom)
+                yield (byteplay.STORE_NAME, importfrom)
+
+            else:
+                importname = mod
+                importfrom = fnname
+
+                yield (byteplay.LOAD_CONST, None)
+                yield (byteplay.IMPORT_NAME, importname)
+                yield (byteplay.STORE_NAME, importfrom)
+
+                yield (byteplay.SetLineno, 0)
+                yield (byteplay.LOAD_CONST, handler)
+                yield (byteplay.MAKE_FUNCTION, 0)
+                yield (byteplay.STORE_NAME, handler.co_name)
+
+                yield (byteplay.SetLineno, 0)
+                yield (byteplay.LOAD_NAME, handler.co_name)
+                yield (byteplay.LOAD_NAME, importfrom)
+                yield (byteplay.STORE_ATTR, fnname)
+
+                yield (byteplay.SetLineno, 0)
+
+        else:
+            yield (byteplay.SetLineno, 0)
+            yield (byteplay.LOAD_CONST, handler)
+            yield (byteplay.MAKE_FUNCTION, 0)
+            yield (byteplay.STORE_FAST, handler.co_name)
+
+            yield (byteplay.SetLineno, 0)
+            yield (byteplay.LOAD_FAST, handler.co_name)
+            yield (byteplay.STORE_NAME, function_path)
+
+            yield (byteplay.SetLineno, 0)
