@@ -27,6 +27,19 @@ setup(package='bar')
     assert out == "()\n{'package': 'foo'}\n()\n{'package': 'bar'}\n"
 
 
+def test_patch_file_globals(capsys):
+    p = Patcher()
+    p.filepath = 'foo.py'
+    p.loads("""
+print(__file__)
+from setuptools import setup
+setup(package='foobar')
+    """)
+    p.patch_run(function='setuptools.setup', handler=pyintercept.print_)
+    out, _err = capsys.readouterr()
+    assert out == "foo.py\n()\n{'package': 'foobar'}\n"
+
+
 def test_patch_local_function(capsys):
     def double(origfn, i):
         print(i * 3)

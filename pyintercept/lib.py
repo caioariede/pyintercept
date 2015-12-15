@@ -9,6 +9,7 @@ from . import json
 
 
 class Patcher(object):
+    filepath = None
     code_object = None
     new_code_object = None
 
@@ -42,6 +43,7 @@ class Patcher(object):
     def load_file(self, filepath):
         """ Same as loads but accepts a file path as argument
         """
+        self.filepath = filepath
         self.compile_file(filepath)
 
         with open(filepath + 'c', 'rb') as fd:
@@ -117,6 +119,9 @@ class Patcher(object):
         # Inject payload into code
         code.code[idx:idx] = payload
 
+        # Inject globals, like __file__
+        code.code[0:0] = self.inject_globals()
+
         # Recalculate line numbers
         line = 1
         code.firstlineno = line
@@ -127,6 +132,11 @@ class Patcher(object):
                 line += 1
 
         return code
+
+    def inject_globals(self):
+        yield (byteplay.SetLineno, 0)
+        yield (byteplay.LOAD_CONST, self.filepath)
+        yield (byteplay.STORE_GLOBAL, '__file__')
 
     def get_code(self, code_object):
         """ Return byteplay.Code instance that will be used to manipulated
