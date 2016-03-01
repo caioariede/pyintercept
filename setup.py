@@ -51,6 +51,7 @@ setup(
     ],
     tests_require=[
         'pytest',
+        'uncompyle6',
     ],
     test_suite='py.test',
     cmdclass={'test': PyTest},

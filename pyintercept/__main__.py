@@ -17,7 +17,7 @@ def get_args():
     parser.add_argument('script', type=str, nargs=1,
                         help='start point of the script')
 
-    parser.add_argument('function', metavar='function', type=str, nargs=1,
+    parser.add_argument('function', metavar='function', type=str, nargs='?',
                         help='function to be intercepted')
 
     parser.add_argument('--args', metavar='args', type=str, nargs='?',
@@ -33,7 +33,7 @@ def get_args():
 
 
 def run(args):
-    function = args.function[0]
+    function = args.function if args.function else None
     script = args.script[0]
     handler = args.handler[0]
     script_args = args.args.split()

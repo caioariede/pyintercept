@@ -13,16 +13,18 @@ class Patcher(object):
     code_object = None
     new_code_object = None
 
-    def patch_run(self, function, args=None, handler=None):
+    _partial_name = None
+
+    def patch_run(self, function=None, args=None, handler=None):
         """ Single call to patch() and run()
         """
-        self.patch(function, handler=handler)
+        self.patch(function=function, handler=handler)
         self.run(args=args)
 
-    def patch_save(self, outfile, function, handler=None):
+    def patch_save(self, outfile, function=None, handler=None):
         """ Single call to patch() and save()
         """
-        self.patch(function, handler=handler)
+        self.patch(function=function, handler=handler)
         self.save(outfile)
 
     def loads(self, fd):
@@ -49,11 +51,12 @@ class Patcher(object):
         with open(filepath + 'c', 'rb') as fd:
             self.loads(fd)
 
-    def patch(self, function, handler=None):
+    def patch(self, function=None, handler=None):
         """ Inject the payload in the loaded code
 
         Arguments:
             function -- str containing the function path to be replaced
+                        or None (replaces all functions)
 
         Keyword arguments:
             handler -- function that will be injected
@@ -64,11 +67,17 @@ class Patcher(object):
         if handler is None:
             handler = json
 
-        code = self.get_code(self.code_object)
-        start_index = self.get_start_index(function, code)
-        new_code = self.inject_patch(start_index, code, function, handler)
+        code = self.get_code(self.new_code_object or self.code_object)
 
-        self.new_code_object = new_code.to_code()
+        if function is not None:
+            start_index = self.get_start_index(function, code)
+            code = self.inject_patch(start_index, code, function, handler)
+        else:
+            for fnpath in self.find_functions(code):
+                idx = self.get_start_index(fnpath, code)
+                code = self.inject_patch(idx, code, fnpath, handler)
+
+        self.new_code_object = code.to_code()
 
     def run(self, args=None):
         """ Run patched code containing the payload
@@ -198,6 +207,22 @@ class Patcher(object):
 
         return 1
 
+    def find_functions(self, code):
+        ops = list(code.code)
+        cnt = len(ops)
+
+        idx = 0
+
+        while idx < cnt:
+            op, val = ops[idx]
+            if op == byteplay.MAKE_FUNCTION:
+                next_op, next_val = ops[idx+1]
+                if next_op in \
+                        (byteplay.STORE_NAME, byteplay.STORE_FAST,
+                            byteplay.STORE_GLOBAL):
+                    yield next_val
+            idx += 1
+
     def clone_handler(self, handler, handlername):
         """ Clone handler, associating a new name
 
@@ -248,14 +273,17 @@ class Patcher(object):
         """
         hndname = handler.co_name
 
-        # from functools import partial as hnd010101partial
-        yield (byteplay.SetLineno, 0)
-        yield (byteplay.LOAD_CONST, -1)
-        yield (byteplay.LOAD_CONST, ('partial',))
-        yield (byteplay.IMPORT_NAME, 'functools')
-        yield (byteplay.IMPORT_FROM, 'partial')
-        yield (byteplay.STORE_NAME, hndname + 'partial')
-        yield (byteplay.POP_TOP, None)
+        if not self._partial_name:
+            # from functools import partial as hnd010101partial
+            self._partial_name = hndname + 'partial'
+
+            yield (byteplay.SetLineno, 0)
+            yield (byteplay.LOAD_CONST, -1)
+            yield (byteplay.LOAD_CONST, ('partial',))
+            yield (byteplay.IMPORT_NAME, 'functools')
+            yield (byteplay.IMPORT_FROM, 'partial')
+            yield (byteplay.STORE_NAME, self._partial_name)
+            yield (byteplay.POP_TOP, None)
 
         if '.' in function_path:
             mod, _dot, fnname = function_path.rpartition('.')
@@ -291,7 +319,7 @@ class Patcher(object):
             # hnd010101setuptools.setup = hnd010101partial(
             #     hnd010101, hnd010101setuptools.setup)
             yield (byteplay.SetLineno, 0)
-            yield (byteplay.LOAD_GLOBAL, hndname + 'partial')
+            yield (byteplay.LOAD_GLOBAL, self._partial_name)
             yield (byteplay.LOAD_GLOBAL, hndname)
             yield (byteplay.LOAD_GLOBAL, hndname + importfrom)
             yield (byteplay.LOAD_ATTR, fnname)
@@ -309,7 +337,7 @@ class Patcher(object):
 
             # local_function = hnd010101partial(hnd010101, local_function)
             yield (byteplay.SetLineno, 0)
-            yield (byteplay.LOAD_GLOBAL, hndname + 'partial')
+            yield (byteplay.LOAD_GLOBAL, self._partial_name)
             yield (byteplay.LOAD_GLOBAL, hndname)
             yield (byteplay.LOAD_GLOBAL, function_path)
             yield (byteplay.CALL_FUNCTION, 2)

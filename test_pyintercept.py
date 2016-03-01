@@ -1,7 +1,12 @@
 import pyintercept
 import pytest
+import uncompyle6
 
 from pyintercept.lib import Patcher
+
+
+def print_code(code):
+    print(uncompyle6.deparse_code(2.7, code).text)
 
 
 def test_patch_file(capsys):
@@ -53,6 +58,39 @@ double(2)
     p.patch_run(function='double', handler=double)
     out, _err = capsys.readouterr()
     assert out == '3\n6\n'
+
+
+def test_patch_multiple_calls(capsys):
+    p = Patcher()
+    p.loads("""
+def x(*args):
+    pass
+x(1)
+def foo(**kwargs):
+    pass
+foo(bar=2)
+    """)
+    p.patch(function='x', handler=pyintercept.print_)
+    p.patch(function='foo', handler=pyintercept.print_)
+    p.run()
+    out, _err = capsys.readouterr()
+    assert out == "(1,)\n{}\n()\n{'bar': 2}\n"
+
+
+def test_patch_all_calls(capsys):
+    p = Patcher()
+    p.loads("""
+def x(*args):
+    pass
+x(1)
+def foo(**kwargs):
+    pass
+foo(bar=2)
+    """)
+    p.patch(handler=pyintercept.print_)
+    p.run()
+    out, _err = capsys.readouterr()
+    assert out == "(1,)\n{}\n()\n{'bar': 2}\n"
 
 
 def test_not_loaded():
